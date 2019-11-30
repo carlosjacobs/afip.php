@@ -1,9 +1,9 @@
 {
-    "name": "carlosjacobs/afip.php",
+    "name": "consultora-grada/afip.php",
     "type": "library",
     "description": "Libreria para usar los Web Services de AFIP (Argentina).  Este repositorio es un fork de https://github.com/afipsdk/afip.php",
     "keywords": ["afip","facturacion-electronica","gratis","soap","cae","padron","contribuyente","libreria"],
-    "homepage": "https://github.com/carlosjacobs/afip.php",
+    "homepage": "https://github.com/consultora-grada/afip.php",
     "license": "MIT",
     "require": {
         "php": ">=5.3.3"
