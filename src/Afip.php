@@ -71,6 +71,13 @@ class Afip {
 	var $CUIT;
 
 	/**
+	 * The point of sale to use
+	 *
+	 * @var int
+	 **/
+	var $POINT_OF_SALE;
+
+	/**
 	 * Implemented Web Services
 	 *
 	 * @var array[string]
@@ -92,6 +99,12 @@ class Afip {
 			throw new Exception("CUIT field is required in options array");
 		} else {
 			$this->CUIT = $options['CUIT'];
+		}
+
+		if (!isset($options['POINT_OF_SALE'])) {
+			throw new Exception("POINT_OF_SALE field is required in options array");
+		} else {
+			$this->POINT_OF_SALE = $options['POINT_OF_SALE'];
 		}
 
 		if (!isset($options['production'])) {
@@ -145,6 +158,38 @@ class Afip {
 	}
 
 	/**
+	 * Gets token authorization file path for an AFIP Web Service
+	 *
+	 * @since 0.8
+	 *
+	 * @param string $service Service for token authorization
+	 *
+	 * @throws Exception if an error occurs
+	 *
+	 * @return string Token Autorization file path for AFIP Web Service 
+	**/
+	private function getServiceTAFilePath($service) 
+	{
+		return $this->TA_FOLDER.'TA-'.$this->options['CUIT'].'-'.$this->options['POINT_OF_SALE'].'-'.$service.($this->options['production'] === TRUE ? '-production' : '').'.xml';
+	}
+
+		/**
+	 * Gets token authorization temporary file path for an AFIP Web Service
+	 *
+	 * @since 0.8
+	 *
+	 * @param string $service Service for token authorization
+	 *
+	 * @throws Exception if an error occurs
+	 *
+	 * @return string Token Autorization temporary file path for AFIP Web Service 
+	**/
+	private function getServiceTATmpFilePath($service) 
+	{
+		return $this->TA_FOLDER.'TA-'.$this->options['CUIT'].'-'.$this->options['POINT_OF_SALE'].'-'.$service.($this->options['production'] === TRUE ? '-production' : '').'.tmp';
+	}
+
+	/**
 	 * Gets token authorization for an AFIP Web Service
 	 *
 	 * @since 0.1
@@ -157,8 +202,10 @@ class Afip {
 	**/
 	public function GetServiceTA($service, $continue = TRUE)
 	{
-		if (file_exists($this->TA_FOLDER.'TA-'.$this->options['CUIT'].'-'.$service.($this->options['production'] === TRUE ? '-production' : '').'.xml')) {
-			$TA = new SimpleXMLElement(file_get_contents($this->TA_FOLDER.'TA-'.$this->options['CUIT'].'-'.$service.($this->options['production'] === TRUE ? '-production' : '').'.xml'));
+		$TA_file_path = $this->getServiceTAFilePath($service);
+
+		if (file_exists($TA_file_path)) {
+			$TA = new SimpleXMLElement(file_get_contents($TA_file_path));
 
 			$actual_time 		= new DateTime(date('c',date('U')+600));
 			$expiration_time 	= new DateTime($TA->header->expirationTime);
@@ -189,6 +236,9 @@ class Afip {
 	**/
 	private function CreateServiceTA($service)
 	{
+		$TA_file_path = $this->getServiceTAFilePath($service);
+		$TA_temporary_file_path = $this->getServiceTATemporaryFilePath($service);
+
 		//Creating TRA
 		$TRA = new SimpleXMLElement(
 		'<?xml version="1.0" encoding="UTF-8"?>' .
@@ -199,16 +249,16 @@ class Afip {
 		$TRA->header->addChild('generationTime',date('c',date('U')-600));
 		$TRA->header->addChild('expirationTime',date('c',date('U')+600));
 		$TRA->addChild('service',$service);
-		$TRA->asXML($this->TA_FOLDER.'TRA-'.$this->options['CUIT'].'-'.$service.'.xml');
+		$TRA->asXML($TA_file_path);
 
 		//Signing TRA
-		$STATUS = openssl_pkcs7_sign($this->TA_FOLDER."TRA-".$this->options['CUIT'].'-'.$service.".xml", $this->TA_FOLDER."TRA-".$this->options['CUIT'].'-'.$service.".tmp", "file://".$this->CERT,
+		$STATUS = openssl_pkcs7_sign($TA_file_path, $TA_temporary_file_path, "file://".$this->CERT,
 			array("file://".$this->PRIVATEKEY, $this->PASSPHRASE),
 			array(),
 			!PKCS7_DETACHED
 		);
 		if (!$STATUS) {return FALSE;}
-		$inf = fopen($this->TA_FOLDER."TRA-".$this->options['CUIT'].'-'.$service.".tmp", "r");
+		$inf = fopen($TA_temporary_file_path, "r");
 		$i = 0;
 		$CMS="";
 		while (!feof($inf)) {
@@ -216,8 +266,8 @@ class Afip {
 			if ( $i++ >= 4 ) {$CMS.=$buffer;}
 		}
 		fclose($inf);
-		unlink($this->TA_FOLDER."TRA-".$this->options['CUIT'].'-'.$service.".xml");
-		unlink($this->TA_FOLDER."TRA-".$this->options['CUIT'].'-'.$service.".tmp");
+		unlink($TA_file_path);
+		unlink($TA_temporary_file_path);
 
 		//Request TA to WSAA
 		$client = new SoapClient($this->WSAA_WSDL, array(
@@ -232,10 +282,10 @@ class Afip {
 
 		$TA = $results->loginCmsReturn;
 
-		if (file_put_contents($this->TA_FOLDER.'TA-'.$this->options['CUIT'].'-'.$service.($this->options['production'] === TRUE ? '-production' : '').'.xml', $TA)) 
+		if (file_put_contents($TA_file_path, $TA)) 
 			return TRUE;
 		else
-			throw new Exception('Error writing "TA-'.$this->options['CUIT'].'-'.$service.'.xml"', 5);
+			throw new Exception('Error writing "' . $TA_file_path . '"', 5);
 	}
 
 	public function __get($property)
